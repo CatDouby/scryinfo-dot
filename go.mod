@@ -1,4 +1,4 @@
-module github.com/scryinfo/dot
+module github.com/CatDouby/scryinfo-dot
 
 go 1.18
 
