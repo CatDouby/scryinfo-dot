@@ -4,18 +4,19 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"github.com/jinzhu/inflection"
-	"github.com/scryinfo/dot/dots/db/pgs"
 	"go/ast"
 	"go/format"
 	"go/token"
-	"golang.org/x/tools/go/packages"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	"github.com/jinzhu/inflection"
+	"github.com/scryinfo/dot/dots/db/pgs"
+	"golang.org/x/tools/go/packages"
 )
 
 //todo bug说明 类似如下情况
@@ -85,6 +86,10 @@ var tableNameInflector = inflection.Plural
 
 //env:   GOPACKAGE=model;GOFILE=D:\gopath\src\github.com\scryinfo\dot\sample\db\pgs\model\models.go
 func main() {
+	projPath, _ := GetProjDirs()
+	os.Setenv("GOPACKAGE", "model")
+	os.Setenv("GOFILE", projPath+"/sample/db/tools/model/models.go")
+
 	log.Println("run gmodel")
 	data := &tData{}
 	parms(data)
@@ -100,7 +105,6 @@ func main() {
 
 	outputName := ""
 	{
-		//types := strings.Split(params.typeName, ",")
 		types := pgs.Underscore(data.TypeName)
 		baseName := fmt.Sprintf("%s_model.go", types)
 		outputName = filepath.Join(".", strings.ToLower(baseName))
@@ -297,4 +301,13 @@ import (
 		}
 	}
 	return src
+}
+
+// returns project: absolute path, project name
+func GetProjDirs() (string, string) {
+	gopath := strings.TrimRight(os.Getenv("GOPATH"), "/")
+	curDir, _ := os.Getwd()
+	s := strings.TrimLeft(curDir, gopath)
+	parts := strings.Split(s, "/")
+	return gopath + "/src/" + parts[1], parts[1]
 }

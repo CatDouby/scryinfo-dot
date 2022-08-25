@@ -2,9 +2,15 @@ package pgs
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
-	"github.com/go-pg/pg/v10"
+	"fmt"
+
 	"github.com/scryinfo/dot/dot"
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/pgdialect"
+	"github.com/uptrace/bun/driver/pgdriver"
+	"github.com/uptrace/bun/extra/bundebug"
 )
 
 const (
@@ -23,20 +29,24 @@ type config struct {
 
 //ConnWrapper connect wrapper
 type ConnWrapper struct {
-	db   *pg.DB
+	db   *bun.DB
 	conf config
 }
 
 func (c *ConnWrapper) Create(dot.Line) error {
-	c.db = pg.Connect(&pg.Options{
-		Addr:     string(c.conf.Host) + ":" + string(c.conf.Port),
-		User:     string(c.conf.User),
-		Password: string(c.conf.Password),
-		Database: string(c.conf.Database),
-	})
-	if c.conf.ShowSQL {
-		c.db.AddQueryHook(pgLogger{})
-	}
+	// dsn := "postgres://root:aBc123@localhost:5432/postgres?sslmode=disable&timeout=5"
+	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?&timeout=5&sslmode=disable",
+		string(c.conf.User),
+		string(c.conf.Password),
+		string(c.conf.Host),
+		string(c.conf.Port),
+		string(c.conf.Database),
+	)
+	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
+	db := bun.NewDB(sqldb, pgdialect.New(), bun.WithDiscardUnknownColumns())
+	db.AddQueryHook(bundebug.NewQueryHook())
+	c.db = db
+
 	return nil
 }
 
@@ -48,14 +58,14 @@ func (c *ConnWrapper) AfterAllDestroy(dot.Line) {
 }
 
 //GetDb get db
-func (c *ConnWrapper) GetDb() *pg.DB {
+func (c *ConnWrapper) GetDb() *bun.DB {
 	return c.db
 }
 
 //TestConn test the connect
 func (c *ConnWrapper) TestConn() bool {
 	n := -1
-	_, _ = c.db.QueryOne(pg.Scan(&n), "select 1")
+	c.db.Query("select 1")
 	return n == 1
 }
 
@@ -86,21 +96,21 @@ func GenerateConnWrapper(conf string) *ConnWrapper {
 }
 
 //GenerateConnWrapperByDb this func is for test
-func GenerateConnWrapperByDb(db *pg.DB) *ConnWrapper {
+func GenerateConnWrapperByDb(db *bun.DB) *ConnWrapper {
 	conn := &ConnWrapper{db, config{}}
 	return conn
 }
 
 type pgLogger struct{}
 
-func (d pgLogger) BeforeQuery(c context.Context, _ *pg.QueryEvent) (context.Context, error) {
+func (d pgLogger) BeforeQuery(c context.Context, _ *pgdriver.Listener) (context.Context, error) {
 	return c, nil
 }
 
-func (d pgLogger) AfterQuery(_ context.Context, q *pg.QueryEvent) error {
+func (d pgLogger) AfterQuery(_ context.Context, q *bun.DB) error {
 	dot.Logger().Debug(func() string {
-		temp, _ := q.FormattedQuery()
-		return string(temp)
+		// q.Formatter().FormatQuery()
+		return ""
 	})
 	return nil
 }
