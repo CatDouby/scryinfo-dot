@@ -9,17 +9,18 @@
 
 > 生成dao指令执行需要项目工作在 GOPATH 之下。
 
-```sh
-# dev debug use
-os.Setenv("GOPACKAGE", "model")
-os.Setenv("GOFILE", "/abs/pathto/models.go")
-```
 
-```sh
+```
+# Common params usage :
+#   -model specify the model file, and the default file is models.go
+#   -typeName
+
 # Generate model file.
 go run dots/db/tools/gmodel/gmodel.go -typeName Notice
 
 # Generate model's dao file.
-# go run /abs/pathto/gdao.go -typeName Notice -daoPackage pgs
-go run dots/db/tools/gdao/gdao.go -typeName Notice -daoPackage pgs
+#   -daoPackage
+# go run /abs/pathto/gdao.go -typeName Notice -daoPackage pgs -model models.go
+# go run dots/db/tools/gdao/gdao.go -typeName Notice -daoPackage pgs -model models.go
+gdao -typeName Notice -daoPackage pgs -model models.go
 ```

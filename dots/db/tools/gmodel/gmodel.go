@@ -54,16 +54,19 @@ type tData struct {
 	MapExcludes  map[string]bool
 	Fields       []DbField
 	StringFields []DbField
+	ModelFile    string
 }
 
 var params struct {
 	typeName    string
 	mapExcludes string
+	model       string
 }
 
 func parms(data *tData) {
 	flag.StringVar(&params.typeName, "typeName", "", "")
 	flag.StringVar(&params.mapExcludes, "mapExcludes", "", "split ','")
+	flag.StringVar(&params.model, "model", "models.go", "")
 	flag.Parse()
 
 	if len(params.mapExcludes) > 0 {
@@ -80,15 +83,13 @@ func parms(data *tData) {
 	data.TypeName = params.typeName
 	data.DbObjectName = pgs.Underscore(params.typeName)
 	data.TableName = tableNameInflector(data.DbObjectName)
+	data.ModelFile = params.model
 }
 
 var tableNameInflector = inflection.Plural
 
 //env:   GOPACKAGE=model;GOFILE=D:\gopath\src\github.com\scryinfo\dot\sample\db\pgs\model\models.go
 func main() {
-	projPath, _ := GetProjDirs()
-	os.Setenv("GOPACKAGE", "model")
-	os.Setenv("GOFILE", projPath+"/sample/db/tools/model/models.go")
 
 	log.Println("run gmodel")
 	data := &tData{}
@@ -96,6 +97,8 @@ func main() {
 	if len(params.typeName) < 1 {
 		log.Fatal("type name is null")
 	}
+	os.Setenv("GOPACKAGE", "model")
+	os.Setenv("GOFILE", data.ModelFile)
 
 	var src []byte = nil
 	{
@@ -142,6 +145,10 @@ func makeData(data *tData) {
 			Dir:   dir,
 			Tests: true,
 			Env:   append(os.Environ(), "GO111MODULE=off", "GOPROXY=off"), //"GOPATH="+dir,
+		}
+		file, err := filepath.Abs(file)
+		if err != nil {
+			log.Fatal(err)
 		}
 		pkgs, err := packages.Load(cfg, file)
 		if err != nil {
@@ -301,13 +308,4 @@ import (
 		}
 	}
 	return src
-}
-
-// returns project: absolute path, project name
-func GetProjDirs() (string, string) {
-	gopath := strings.TrimRight(os.Getenv("GOPATH"), "/")
-	curDir, _ := os.Getwd()
-	s := strings.TrimLeft(curDir, gopath)
-	parts := strings.Split(s, "/")
-	return gopath + "/src/" + parts[1], parts[1]
 }

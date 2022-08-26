@@ -30,6 +30,7 @@ type tData struct {
 	TypeName           string
 	TableName          string
 	OrmMode            string
+	ModelFile          string
 	ModelPkgName       string
 	ImportModelPkgName string
 	DaoPkgName         string
@@ -42,6 +43,7 @@ type tData struct {
 var params struct {
 	typeName   string
 	tableName  string
+	model      string
 	daoPackage string
 	suffix     string
 	ormMode    string // bun|gorm|...
@@ -55,6 +57,7 @@ func parms(data *tData) {
 	flag.StringVar(&params.daoPackage, "daoPackage", "", "")
 	flag.StringVar(&params.suffix, "suffix", "Dao", "")
 	flag.StringVar(&params.ormMode, "ormMode", "bun", "")
+	flag.StringVar(&params.model, "model", "models.go", "")
 	flag.BoolVar(&params.useGorm, "useGorm", false, "")
 	flag.Parse()
 
@@ -66,6 +69,7 @@ func parms(data *tData) {
 	data.TableName = params.tableName
 	data.DaoPkgName = params.daoPackage
 	data.OrmMode = params.ormMode
+	data.ModelFile = params.model
 	if len(data.DaoPkgName) < 1 {
 		data.DaoPkgName = "dao"
 	}
@@ -77,7 +81,7 @@ func parms(data *tData) {
 	data.ID = uuid.GetUuid()
 }
 
-// go run dots/db/tools/gdao/gdao.go -typeName Notice -daoPackage pgs
+// go run dots/db/tools/gdao/gdao.go -typeName Notice -model models.go -daoPackage pgs
 func main() {
 	log.Println("run gdao")
 	data := &tData{}
@@ -91,10 +95,8 @@ func main() {
 		log.Fatal("table name is null")
 	}
 
-	projPath, _ := GetProjDirs()
-
 	os.Setenv("GOPACKAGE", "model")
-	os.Setenv("GOFILE", projPath+"/sample/db/tools/model/models.go")
+	os.Setenv("GOFILE", data.ModelFile)
 
 	var src []byte = nil
 	{
@@ -776,6 +778,7 @@ func getBunDaoTpl() (temp string) {
 package {{$.DaoPkgName}}
 import (
 	"context"
+	"database/sql"
 	"time"
 	
     "github.com/scryinfo/dot/dot"
@@ -815,6 +818,8 @@ func {{$.DaoName}}TypeLives() []*dot.TypeLives {
 	lives = append(lives, tl)
 	return lives
 }
+
+// if find|update|insert nothing, sql.ErrNoRows error may returned
 
 func (c *{{$.DaoName}}) GetByIDWithLock(conn *bun.DB, id string) (m *{{$.ModelPkgName}}.{{$.TypeName}}, err error) {
 	m = &{{$.ModelPkgName}}.{{$.TypeName}}{}
@@ -900,7 +905,6 @@ func (c *{{$.DaoName}}) Count(conn *bun.DB, condition string, params ...interfac
 	return
 }
 
-// if find nothing, return pg.ErrNoRows
 func (c *{{$.DaoName}}) QueryPageWithLock(conn *bun.DB, pageSize int, page int, condition string, params ...interface{}) (ms []*{{$.ModelPkgName}}.{{$.TypeName}}, err error) {
 	if len(condition) < 1 {
 		err = conn.NewSelect().Model(&ms).Limit(pageSize).Offset((page - 1) * pageSize).For("UPDATE").Scan(context.TODO())
@@ -1008,7 +1012,15 @@ func (c *{{$.DaoName}}) Upsert(conn *bun.DB, m *{{$.ModelPkgName}}.{{$.TypeName}
 	for _, it := range m.ToUpsertSet() {
 		om.Set(it)
 	}
-	_, err = om.Exec(context.TODO())
+	res, err := om.Exec(context.TODO())
+	if n, _ := res.RowsAffected(); n == 0 {
+		newm, err := c.GetLockByID(conn, m.ID)
+		if err != nil {
+			return err
+		}
+		m.OptimisticLockVersion = newm[0].OptimisticLockVersion
+		err = c.Update(conn, m)
+	}
 	return err
 }
 
@@ -1026,14 +1038,25 @@ func (c *{{$.DaoName}}) UpsertReturn(conn *bun.DB, m *{{$.ModelPkgName}}.{{$.Typ
 		om.Set(it)
 	}
 	mnew = &{{$.ModelPkgName}}.{{$.TypeName}}{}
-	_, err = om.Returning("*").Exec(context.TODO(), mnew)
+	res, err := om.Returning("*").Exec(context.TODO(), mnew)
+	if n, _ := res.RowsAffected(); n == 0 {
+		ms, err := c.GetLockByID(conn, m.ID)
+		if err != nil {
+			return nil, err
+		}
+		m.OptimisticLockVersion = ms[0].OptimisticLockVersion
+		mnew, err = c.UpdateReturn(conn, m)
+	}
 	return
 }
 
 func (c *{{$.DaoName}}) Update(conn *bun.DB, m *{{$.ModelPkgName}}.{{$.TypeName}}) (err error) {
 	m.UpdateTime = time.Now().Unix()
 	m.OptimisticLockVersion++
-	_, err = conn.NewUpdate().Model(m).Where({{$.ModelPkgName}}.{{$.TypeName}}_ID+" = ? and "+{{$.ModelPkgName}}.{{$.TypeName}}_OptimisticLockVersion+" = ?", m.ID, m.OptimisticLockVersion-1).Exec(context.TODO())
+	res, err := conn.NewUpdate().Model(m).Where({{$.ModelPkgName}}.{{$.TypeName}}_ID+" = ? and "+{{$.ModelPkgName}}.{{$.TypeName}}_OptimisticLockVersion+" = ?", m.ID, m.OptimisticLockVersion-1).Exec(context.TODO())
+	if n, _ := res.RowsAffected(); n == 0 {
+		err = sql.ErrNoRows
+	}
 	return
 }
 
@@ -1041,9 +1064,12 @@ func (c *{{$.DaoName}}) UpdateReturn(conn *bun.DB, m *{{$.ModelPkgName}}.{{$.Typ
 	m.UpdateTime = time.Now().Unix()
 	m.OptimisticLockVersion++
 	mnew = &{{$.ModelPkgName}}.{{$.TypeName}}{}
-	_, err = conn.NewUpdate().Model(m).Where({{$.ModelPkgName}}.{{$.TypeName}}_ID+" = ? and "+{{$.ModelPkgName}}.{{$.TypeName}}_OptimisticLockVersion+" = ?", m.ID, m.OptimisticLockVersion-1).Returning("*").Exec(context.TODO(), mnew)
+	res, err := conn.NewUpdate().Model(m).Where({{$.ModelPkgName}}.{{$.TypeName}}_ID+" = ? and "+{{$.ModelPkgName}}.{{$.TypeName}}_OptimisticLockVersion+" = ?", m.ID, m.OptimisticLockVersion-1).Returning("*").Exec(context.TODO(), mnew)
 	if err != nil {
 		mnew = nil
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		err = sql.ErrNoRows
 	}
 	return
 }
@@ -1108,13 +1134,4 @@ func (c *{{$.DaoName}}) Update{{$.TypeName}}SomeColumn(conn *bun.DB, ids []strin
 }
 `
 	return
-}
-
-// returns project: absolute path, project name
-func GetProjDirs() (string, string) {
-	gopath := strings.TrimRight(os.Getenv("GOPATH"), "/")
-	curDir, _ := os.Getwd()
-	s := strings.TrimLeft(curDir, gopath)
-	parts := strings.Split(s, "/")
-	return gopath + "/src/" + parts[1], parts[1]
 }

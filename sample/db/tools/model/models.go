@@ -1,8 +1,7 @@
 package model
 
 import (
-	"database/sql"
-
+	"github.com/scryinfo/dot/dots/db"
 	"github.com/uptrace/bun"
 )
 
@@ -11,12 +10,6 @@ type ModelBase struct {
 	UpdateTime            int64  `json:"updateTime"`                           //更新时间
 	CreateTime            int64  `json:"createTime"`                           //创建时间
 	OptimisticLockVersion int64  `pg:",use_zero" json:"optimisticLockVersion"` //default 0 ，not null
-}
-type AutoModelBase struct {
-	ID          uint         `gorm:"primaryKey;autoIncrement"`
-	CreatedTime int64        `gorm:"autoCreateTime"`
-	UpdatedTime int64        `gorm:"autoCreateTime;autoUpdateTime"`
-	DeletedTime sql.NullTime `gorm:"index"`
 }
 
 type DataType struct {
@@ -55,7 +48,7 @@ type HasSub struct {
 //go:generate gmodel -typeName=AutoData -tableName=auto_datas
 //go:generate gdao -typeName=AutoData -tableName=auto_datas -daoPackage=dao -useGorm=true
 type AutoData struct {
-	AutoModelBase
+	db.AutoModelBase
 	Name string
 	Age  int8
 }
