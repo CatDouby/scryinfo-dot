@@ -34,7 +34,6 @@ type ConnWrapper struct {
 }
 
 func (c *ConnWrapper) Create(dot.Line) error {
-	// dsn := "postgres://root:aBc123@localhost:5432/postgres?sslmode=disable&timeout=5"
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?&timeout=5&sslmode=disable",
 		string(c.conf.User),
 		string(c.conf.Password),
@@ -65,7 +64,7 @@ func (c *ConnWrapper) GetDb() *bun.DB {
 //TestConn test the connect
 func (c *ConnWrapper) TestConn() bool {
 	n := -1
-	c.db.Query("select 1")
+	c.db.NewSelect().ColumnExpr("1 AS n").Scan(context.TODO(), &n)
 	return n == 1
 }
 
